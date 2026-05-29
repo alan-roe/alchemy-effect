@@ -1,4 +1,5 @@
 import * as Proxmox from "@/Proxmox";
+import { parseRootfsDiskGb } from "@/Proxmox/LXC/Container";
 import {
   createLxc,
   destroyLxc,
@@ -55,20 +56,6 @@ const waitForStopped = (node: string, vmid: number) =>
     // error from the next assertion — we don't want to swallow real failures.
     Effect.ignore,
   );
-
-// ---------------------------------------------------------------------------
-// Helper: parse GB out of a PVE rootfs string
-// e.g. "local-lvm:vm-100-disk-0,size=8G" → 8
-//      "local-lvm:8"                      → 8
-// ---------------------------------------------------------------------------
-
-const parseRootfsDiskGb = (rootfs: string): number | undefined => {
-  const sizeMatch = rootfs.match(/size=(\d+(?:\.\d+)?)G/i);
-  if (sizeMatch) return parseFloat(sizeMatch[1]);
-  const simpleMatch = rootfs.match(/:(\d+)$/);
-  if (simpleMatch) return parseInt(simpleMatch[1], 10);
-  return undefined;
-};
 
 // ---------------------------------------------------------------------------
 // Test 1 — create with defaults and delete

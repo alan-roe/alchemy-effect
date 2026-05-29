@@ -9,7 +9,7 @@ import * as Provider from "../../Provider.ts";
 import { Resource } from "../../Resource.ts";
 import { Stack } from "../../Stack.ts";
 import { Stage } from "../../Stage.ts";
-import type { Credentials } from "../Credentials.ts";
+import type { ProxmoxEnvironment } from "../Environment.ts";
 import {
   type LxcConfig,
   type LxcInterface,
@@ -315,7 +315,7 @@ export const parseIpv4FromInterfaces = (
 const waitForRunning = (
   node: string,
   vmid: number,
-): Effect.Effect<void, ContainerNotRunning | ProxmoxApiError, Credentials> =>
+): Effect.Effect<void, ContainerNotRunning | ProxmoxApiError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
     const status = yield* getLxcStatus(node, vmid);
     const st = (status as LxcStatus | undefined)?.status ?? "stopped";
@@ -347,7 +347,7 @@ const waitForRunning = (
 const waitForIpv4 = (
   node: string,
   vmid: number,
-): Effect.Effect<string | undefined, ProxmoxApiError, Credentials> =>
+): Effect.Effect<string | undefined, ProxmoxApiError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
     const ifaces = yield* getLxcInterfaces(node, vmid).pipe(
       Effect.catchIf(
@@ -383,7 +383,7 @@ const waitForIpv4 = (
 const firstOnlineNode = (): Effect.Effect<
   string,
   ProxmoxApiError,
-  Credentials
+  ProxmoxEnvironment
 > =>
   Effect.gen(function* () {
     const nodes = yield* listNodes();
@@ -889,7 +889,7 @@ export const ContainerProvider = () =>
  * PVE rootfs strings look like "local-lvm:vm-100-disk-0,size=8G" or
  * "local-lvm:8". Extract the GB value, returning undefined on parse failure.
  */
-const parseRootfsDiskGb = (rootfs: string): number | undefined => {
+export const parseRootfsDiskGb = (rootfs: string): number | undefined => {
   const sizeMatch = rootfs.match(/size=(\d+(?:\.\d+)?)G/i);
   if (sizeMatch) return parseFloat(sizeMatch[1]);
 

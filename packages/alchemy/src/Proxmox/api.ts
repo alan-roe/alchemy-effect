@@ -2,7 +2,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import type { ScopedPlanStatusSession } from "../Cli/Cli.ts";
 import { ProxmoxApiError, request } from "./client.ts";
-import type { Credentials } from "./Credentials.ts";
+import type { ProxmoxEnvironment } from "./Environment.ts";
 import { ProxmoxTaskError, waitForTask } from "./Tasks.ts";
 
 // ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ export interface LxcInterface {
 export const nextVmid = (): Effect.Effect<
   number,
   ProxmoxApiError,
-  Credentials
+  ProxmoxEnvironment
 > =>
   Effect.gen(function* () {
     const data = yield* request("GET", "/cluster/nextid");
@@ -79,7 +79,7 @@ export const nextVmid = (): Effect.Effect<
  */
 export const listClusterResources = (params?: {
   type?: "vm" | "storage" | "node" | "sdn";
-}): Effect.Effect<ClusterResource[], ProxmoxApiError, Credentials> =>
+}): Effect.Effect<ClusterResource[], ProxmoxApiError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
     const data = yield* request("GET", "/cluster/resources", {
       type: params?.type,
@@ -95,7 +95,7 @@ export const listClusterResources = (params?: {
 export const listNodes = (): Effect.Effect<
   NodeInfo[],
   ProxmoxApiError,
-  Credentials
+  ProxmoxEnvironment
 > =>
   Effect.gen(function* () {
     const data = yield* request("GET", "/nodes");
@@ -114,7 +114,7 @@ export const listNodes = (): Effect.Effect<
 export const getLxcStatus = (
   node: string,
   vmid: number,
-): Effect.Effect<LxcStatus | undefined, ProxmoxApiError, Credentials> =>
+): Effect.Effect<LxcStatus | undefined, ProxmoxApiError, ProxmoxEnvironment> =>
   request("GET", `/nodes/${node}/lxc/${vmid}/status/current`).pipe(
     Effect.map((data) => data as LxcStatus),
     Effect.catchIf(
@@ -131,7 +131,7 @@ export const getLxcStatus = (
 export const getLxcConfig = (
   node: string,
   vmid: number,
-): Effect.Effect<LxcConfig | undefined, ProxmoxApiError, Credentials> =>
+): Effect.Effect<LxcConfig | undefined, ProxmoxApiError, ProxmoxEnvironment> =>
   request("GET", `/nodes/${node}/lxc/${vmid}/config`).pipe(
     Effect.map((data) => data as LxcConfig),
     Effect.catchIf(
@@ -148,7 +148,7 @@ export const getLxcConfig = (
 export const getLxcInterfaces = (
   node: string,
   vmid: number,
-): Effect.Effect<LxcInterface[], ProxmoxApiError, Credentials> =>
+): Effect.Effect<LxcInterface[], ProxmoxApiError, ProxmoxEnvironment> =>
   request("GET", `/nodes/${node}/lxc/${vmid}/interfaces`).pipe(
     Effect.map((data) => (Array.isArray(data) ? (data as LxcInterface[]) : [])),
   );
@@ -180,7 +180,7 @@ export const createLxc = (
     [k: string]: unknown;
   },
   options?: { session?: ScopedPlanStatusSession },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, Credentials> =>
+): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
     // Build a serializable params record; skip unknown-typed keys
     const apiParams: Record<string, string | number | boolean | undefined> = {};
@@ -216,7 +216,7 @@ export const destroyLxc = (
     purge?: boolean;
     session?: ScopedPlanStatusSession;
   },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, Credentials> =>
+): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
     const result = yield* request("DELETE", `/nodes/${node}/lxc/${vmid}`, {
       force: options?.force,
@@ -254,7 +254,7 @@ export const setLxcConfig = (
   node: string,
   vmid: number,
   params: Record<string, string | number | boolean | undefined>,
-): Effect.Effect<void, ProxmoxApiError, Credentials> =>
+): Effect.Effect<void, ProxmoxApiError, ProxmoxEnvironment> =>
   request("PUT", `/nodes/${node}/lxc/${vmid}/config`, params).pipe(
     Effect.as(undefined),
   );
@@ -267,7 +267,7 @@ export const startLxc = (
   node: string,
   vmid: number,
   options?: { session?: ScopedPlanStatusSession },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, Credentials> =>
+): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
     const upid = (yield* request(
       "POST",
@@ -288,7 +288,7 @@ export const stopLxc = (
   node: string,
   vmid: number,
   options?: { session?: ScopedPlanStatusSession },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, Credentials> =>
+): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
     const upid = (yield* request(
       "POST",
@@ -319,7 +319,7 @@ export const resizeLxc = (
   vmid: number,
   params: { disk: string; size: string },
   options?: { session?: ScopedPlanStatusSession },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, Credentials> =>
+): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
     const upid = (yield* request(
       "PUT",

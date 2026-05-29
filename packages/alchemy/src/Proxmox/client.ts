@@ -2,7 +2,7 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as https from "node:https";
-import { Credentials } from "./Credentials.ts";
+import { ProxmoxEnvironment } from "./Environment.ts";
 
 export class ProxmoxApiError extends Data.TaggedError("ProxmoxApiError")<{
   status: number;
@@ -19,7 +19,7 @@ export class ProxmoxApiError extends Data.TaggedError("ProxmoxApiError")<{
  * Non-2xx responses become `ProxmoxApiError`.
  *
  * `path` should be relative, e.g. `"/cluster/nextid"`. The base URL
- * `https://{host}:8006/api2/json` is derived from `Credentials`.
+ * `https://{host}:8006/api2/json` is derived from `ProxmoxEnvironment`.
  *
  * For GET and DELETE, `params` are serialized as a query string (PVE rejects
  * request bodies on DELETE with HTTP 501 "Unexpected content for method").
@@ -31,9 +31,9 @@ export const request = (
   method: "GET" | "POST" | "PUT" | "DELETE",
   path: string,
   params?: Record<string, string | number | boolean | undefined>,
-): Effect.Effect<unknown, ProxmoxApiError, Credentials> =>
+): Effect.Effect<unknown, ProxmoxApiError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
-    const creds = yield* Credentials;
+    const creds = yield* ProxmoxEnvironment;
     const baseUrl = `https://${creds.host}:8006/api2/json`;
     const authHeader = `PVEAPIToken=${creds.tokenId}=${Redacted.value(creds.tokenSecret)}`;
 

@@ -1,7 +1,6 @@
 import * as Layer from "effect/Layer";
 import * as Provider from "../Provider.ts";
 import { ProxmoxAuth } from "./AuthProvider.ts";
-import * as Credentials from "./Credentials.ts";
 import { fromProfile } from "./Environment.ts";
 import { Container, ContainerProvider } from "./LXC/Container.ts";
 
@@ -13,8 +12,8 @@ export type ProviderRequirements = Layer.Services<ReturnType<typeof providers>>;
 
 /**
  * Build a layer that registers all Proxmox resource providers, the Proxmox
- * `AuthProvider`, and the resolved `Credentials`. Include this from your stack
- * alongside other cloud `providers()` layers.
+ * `AuthProvider`, and the resolved `ProxmoxEnvironment`. Include this from your
+ * stack alongside other cloud `providers()` layers.
  *
  * @example
  * ```typescript
@@ -38,16 +37,10 @@ export type ProviderRequirements = Layer.Services<ReturnType<typeof providers>>;
  * );
  * ```
  */
-export const providers = () => {
-  // ProxmoxEnvironment is derived from Credentials, so compose them together.
-  const credentialsAndEnv = fromProfile().pipe(
-    Layer.provide(Credentials.fromAuthProvider()),
-    Layer.provideMerge(Credentials.fromAuthProvider()),
-  );
-  return Layer.effect(Providers, Provider.collection([Container])).pipe(
+export const providers = () =>
+  Layer.effect(Providers, Provider.collection([Container])).pipe(
     Layer.provide(ContainerProvider()),
-    Layer.provideMerge(credentialsAndEnv),
+    Layer.provideMerge(fromProfile()),
     Layer.provideMerge(ProxmoxAuth),
     Layer.orDie,
   );
-};

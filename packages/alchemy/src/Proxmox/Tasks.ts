@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
 import type { ScopedPlanStatusSession } from "../Cli/Cli.ts";
 import { ProxmoxApiError, request } from "./client.ts";
-import type { Credentials } from "./Credentials.ts";
+import type { ProxmoxEnvironment } from "./Environment.ts";
 
 export class ProxmoxTaskError extends Data.TaggedError("ProxmoxTaskError")<{
   upid: string;
@@ -38,7 +38,7 @@ interface TaskLogEntry {
 const fetchTaskLog = (
   node: string,
   upid: string,
-): Effect.Effect<string[], ProxmoxApiError, Credentials> =>
+): Effect.Effect<string[], ProxmoxApiError, ProxmoxEnvironment> =>
   Effect.gen(function* () {
     const encodedUpid = encodeURIComponent(upid);
     const entries = (yield* request(
@@ -64,7 +64,7 @@ export const waitForTask = (
     timeout?: Duration.Duration;
     session?: ScopedPlanStatusSession;
   },
-): Effect.Effect<void, ProxmoxTaskError | ProxmoxApiError, Credentials> => {
+): Effect.Effect<void, ProxmoxTaskError | ProxmoxApiError, ProxmoxEnvironment> => {
   const timeout = options?.timeout ?? Duration.minutes(5);
   const pollInterval = Duration.seconds(2);
   const maxAttempts = Math.ceil(
