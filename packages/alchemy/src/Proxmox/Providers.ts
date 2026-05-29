@@ -1,4 +1,6 @@
 import * as Layer from "effect/Layer";
+import { CredentialsStoreLive } from "../Auth/Credentials.ts";
+import { ProfileLive } from "../Auth/Profile.ts";
 import * as Provider from "../Provider.ts";
 import { ProxmoxAuth } from "./AuthProvider.ts";
 import { fromProfile } from "./Environment.ts";
@@ -42,5 +44,7 @@ export const providers = () =>
     Layer.provide(ContainerProvider()),
     Layer.provideMerge(fromProfile()),
     Layer.provideMerge(ProxmoxAuth),
+    Layer.provideMerge(ProfileLive),
+    Layer.provideMerge(CredentialsStoreLive),
     Layer.orDie,
   );
