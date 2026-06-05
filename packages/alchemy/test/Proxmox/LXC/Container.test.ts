@@ -159,10 +159,7 @@ provider(
 
       expect(reconciled.status).toBe("running");
 
-      const liveStatus = yield* getLxcStatus(
-        reconciled.node,
-        reconciled.vmid,
-      );
+      const liveStatus = yield* getLxcStatus(reconciled.node, reconciled.vmid);
       expect(liveStatus?.status).toBe("running");
 
       yield* stack.destroy();
@@ -413,7 +410,7 @@ test.provider.skip(
             force: true,
             purge: true,
           }).pipe(Effect.ignore);
-          yield* stack.destroy();
+          yield* stack.destroy().pipe(Effect.ignore);
         }),
       );
     }).pipe(logLevel),
