@@ -183,14 +183,13 @@ export interface ContainerAttributes {
  * });
  * ```
  */
-export interface Container
-  extends Resource<
-    "Proxmox.LXC.Container",
-    ContainerProps,
-    ContainerAttributes,
-    never,
-    Providers
-  > {}
+export interface Container extends Resource<
+  "Proxmox.LXC.Container",
+  ContainerProps,
+  ContainerAttributes,
+  never,
+  Providers
+> {}
 
 export const Container = Resource<Container>("Proxmox.LXC.Container");
 
@@ -315,7 +314,11 @@ export const parseIpv4FromInterfaces = (
 const waitForRunning = (
   node: string,
   vmid: number,
-): Effect.Effect<void, ContainerNotRunning | ProxmoxApiError, ProxmoxEnvironment> =>
+): Effect.Effect<
+  void,
+  ContainerNotRunning | ProxmoxApiError,
+  ProxmoxEnvironment
+> =>
   Effect.gen(function* () {
     const status = yield* getLxcStatus(node, vmid);
     const st = (status as LxcStatus | undefined)?.status ?? "stopped";
@@ -638,9 +641,7 @@ export const ContainerProvider = () =>
 
           // Sticky node per ADR 0003
           const effectiveNode =
-            props.node ??
-            output?.node ??
-            (yield* firstOnlineNode());
+            props.node ?? output?.node ?? (yield* firstOnlineNode());
 
           // Compute hostname — use prop or generate deterministic name
           const desiredHostname =
@@ -792,7 +793,8 @@ export const ContainerProvider = () =>
           }
 
           // 3c. bridge — rewrite net0 preserving any IP assignment
-          const observedNet0 = observedConfig?.net0 ?? defaultNet0(desiredBridge);
+          const observedNet0 =
+            observedConfig?.net0 ?? defaultNet0(desiredBridge);
           const net0Parts = parseNet0(observedNet0);
           const observedBridge = net0Parts["bridge"];
           if (observedBridge !== desiredBridge) {
@@ -824,7 +826,8 @@ export const ContainerProvider = () =>
 
           // 3e. power state
           const currentStatus =
-            (yield* getLxcStatus(containerNode, finalVmid))?.status ?? "stopped";
+            (yield* getLxcStatus(containerNode, finalVmid))?.status ??
+            "stopped";
 
           if (desiredStart && currentStatus === "stopped") {
             yield* startLxc(containerNode, finalVmid, { session });
@@ -851,7 +854,9 @@ export const ContainerProvider = () =>
             node: containerNode,
             ipv4,
             status:
-              finalStatus?.status === "running" ? "running" : ("stopped" as const),
+              finalStatus?.status === "running"
+                ? "running"
+                : ("stopped" as const),
           } satisfies ContainerAttributes;
         }),
 

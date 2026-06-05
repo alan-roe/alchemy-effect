@@ -131,10 +131,7 @@ export const ProxmoxAuth = AuthProviderLayer<
         ),
       );
 
-    const configureCredentials = (
-      profileName: string,
-      ctx: ConfigureContext,
-    ) =>
+    const configureCredentials = (profileName: string, ctx: ConfigureContext) =>
       Effect.gen(function* () {
         if (ctx.ci) {
           return { method: "env" as const };

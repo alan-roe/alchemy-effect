@@ -104,9 +104,10 @@ export const request = (
 
                 let parsed: unknown;
                 try {
-                  parsed = responseText.length > 0
-                    ? JSON.parse(responseText)
-                    : undefined;
+                  parsed =
+                    responseText.length > 0
+                      ? JSON.parse(responseText)
+                      : undefined;
                 } catch {
                   parsed = responseText;
                 }
@@ -115,7 +116,12 @@ export const request = (
                   const message =
                     typeof parsed === "object" &&
                     parsed != null &&
-                    (parsed as { errors?: { message?: string }; message?: string }).message
+                    (
+                      parsed as {
+                        errors?: { message?: string };
+                        message?: string;
+                      }
+                    ).message
                       ? (parsed as { message: string }).message
                       : `HTTP ${statusCode}`;
                   reject(

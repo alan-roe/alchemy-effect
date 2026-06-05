@@ -64,7 +64,11 @@ export const waitForTask = (
     timeout?: Duration.Duration;
     session?: ScopedPlanStatusSession;
   },
-): Effect.Effect<void, ProxmoxTaskError | ProxmoxApiError, ProxmoxEnvironment> => {
+): Effect.Effect<
+  void,
+  ProxmoxTaskError | ProxmoxApiError,
+  ProxmoxEnvironment
+> => {
   const timeout = options?.timeout ?? Duration.minutes(5);
   const pollInterval = Duration.seconds(2);
   const maxAttempts = Math.ceil(

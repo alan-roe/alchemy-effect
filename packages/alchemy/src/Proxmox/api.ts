@@ -180,7 +180,11 @@ export const createLxc = (
     [k: string]: unknown;
   },
   options?: { session?: ScopedPlanStatusSession },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
+): Effect.Effect<
+  void,
+  ProxmoxApiError | ProxmoxTaskError,
+  ProxmoxEnvironment
+> =>
   Effect.gen(function* () {
     // Build a serializable params record; skip unknown-typed keys
     const apiParams: Record<string, string | number | boolean | undefined> = {};
@@ -196,7 +200,11 @@ export const createLxc = (
       }
     }
 
-    const upid = (yield* request("POST", `/nodes/${node}/lxc`, apiParams)) as string;
+    const upid = (yield* request(
+      "POST",
+      `/nodes/${node}/lxc`,
+      apiParams,
+    )) as string;
     yield* waitForTask(upid, node, {
       timeout: Duration.minutes(5),
       session: options?.session,
@@ -216,7 +224,11 @@ export const destroyLxc = (
     purge?: boolean;
     session?: ScopedPlanStatusSession;
   },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
+): Effect.Effect<
+  void,
+  ProxmoxApiError | ProxmoxTaskError,
+  ProxmoxEnvironment
+> =>
   Effect.gen(function* () {
     const result = yield* request("DELETE", `/nodes/${node}/lxc/${vmid}`, {
       force: options?.force,
@@ -267,7 +279,11 @@ export const startLxc = (
   node: string,
   vmid: number,
   options?: { session?: ScopedPlanStatusSession },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
+): Effect.Effect<
+  void,
+  ProxmoxApiError | ProxmoxTaskError,
+  ProxmoxEnvironment
+> =>
   Effect.gen(function* () {
     const upid = (yield* request(
       "POST",
@@ -288,7 +304,11 @@ export const stopLxc = (
   node: string,
   vmid: number,
   options?: { session?: ScopedPlanStatusSession },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
+): Effect.Effect<
+  void,
+  ProxmoxApiError | ProxmoxTaskError,
+  ProxmoxEnvironment
+> =>
   Effect.gen(function* () {
     const upid = (yield* request(
       "POST",
@@ -319,7 +339,11 @@ export const resizeLxc = (
   vmid: number,
   params: { disk: string; size: string },
   options?: { session?: ScopedPlanStatusSession },
-): Effect.Effect<void, ProxmoxApiError | ProxmoxTaskError, ProxmoxEnvironment> =>
+): Effect.Effect<
+  void,
+  ProxmoxApiError | ProxmoxTaskError,
+  ProxmoxEnvironment
+> =>
   Effect.gen(function* () {
     const upid = (yield* request(
       "PUT",
