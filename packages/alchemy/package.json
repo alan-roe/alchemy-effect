@@ -178,6 +178,12 @@
       "worker": "./src/Kubernetes/index.ts",
       "import": "./lib/Kubernetes/index.js"
     },
+    "./Linux": {
+      "types": "./lib/Linux/index.d.ts",
+      "bun": "./src/Linux/index.ts",
+      "worker": "./src/Linux/index.ts",
+      "import": "./lib/Linux/index.js"
+    },
     "./Neon": {
       "types": "./lib/Neon/index.d.ts",
       "bun": "./src/Neon/index.ts",
@@ -207,6 +213,18 @@
       "bun": "./src/Planetscale/*/index.ts",
       "worker": "./src/Planetscale/*/index.ts",
       "import": "./lib/Planetscale/*/index.js"
+    },
+    "./Postgres": {
+      "types": "./lib/Postgres/index.d.ts",
+      "bun": "./src/Postgres/index.ts",
+      "worker": "./src/Postgres/index.ts",
+      "import": "./lib/Postgres/index.js"
+    },
+    "./Proxmox": {
+      "types": "./lib/Proxmox/index.d.ts",
+      "bun": "./src/Proxmox/index.ts",
+      "worker": "./src/Proxmox/index.ts",
+      "import": "./lib/Proxmox/index.js"
     },
     "./Runtime": {
       "types": "./lib/Runtime.d.ts",
