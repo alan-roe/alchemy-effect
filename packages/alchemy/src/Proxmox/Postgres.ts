@@ -54,10 +54,22 @@ export interface PostgresProps {
    */
   adminPassword?: Redacted.Redacted<string>;
   /**
-   * CIDR allowed to connect with password (scram) auth, written to `pg_hba`.
-   * @default "0.0.0.0/0"
+   * CIDRs allowed to connect with password (scram) auth, written to `pg_hba`
+   * as one rule each — `hostssl` when `ssl` is on (the default), else `host`.
+   * RFC1918 private ranges, so the server is reachable from private networks
+   * but refuses the public internet. Pass `["0.0.0.0/0"]` to expose it to any
+   * host (not recommended).
+   * @default ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
    */
-  allowCidr?: string;
+  allowCidrs?: readonly string[];
+  /**
+   * Connect to the server over TLS. The Debian PostgreSQL package ships with
+   * TLS enabled (a self-signed cert), so this defaults to `true` and the
+   * certificate is not verified (homelab posture). Set `false` only for a
+   * server without TLS.
+   * @default true
+   */
+  ssl?: boolean;
   /**
    * How to SSH to the Proxmox node for `pct exec`. By default the container's
    * node name is the SSH host (relies on it resolving via DNS / `~/.ssh/config`);
@@ -92,7 +104,8 @@ export interface ProvisionProps {
   ipv4: string | undefined;
   version: string | undefined;
   adminPassword: Redacted.Redacted<string>;
-  allowCidr: string;
+  allowCidrs: readonly string[];
+  ssl: boolean;
 }
 
 export type Provision = Resource<
@@ -104,6 +117,45 @@ export type Provision = Resource<
 >;
 
 export const Provision = Resource<Provision>("Proxmox.Postgres.Provision");
+
+/** RFC1918 private IPv4 ranges — the default pg_hba exposure (no public internet). */
+export const DEFAULT_ALLOW_CIDRS: readonly string[] = [
+  "10.0.0.0/8",
+  "172.16.0.0/12",
+  "192.168.0.0/16",
+];
+
+/**
+ * Render one pg_hba rule per CIDR. With `ssl` on, rules use `hostssl` so the
+ * server refuses non-TLS password auth (closing the cleartext path entirely);
+ * otherwise plain `host` rules are emitted.
+ */
+export const buildHbaLines = (
+  cidrs: readonly string[],
+  ssl: boolean,
+): string[] =>
+  cidrs.map(
+    (cidr) => `${ssl ? "hostssl" : "host"} all all ${cidr} scram-sha-256`,
+  );
+
+/**
+ * Build an idempotent shell command that resolves the active `pg_hba.conf`
+ * (via `SHOW hba_file`) once, then appends each rule only when it is absent.
+ * Every rule is single-quoted via {@link quoteArg} so CIDRs cannot break out
+ * of the shell. Safe to re-run.
+ */
+export const buildHbaAppendCommand = (
+  cidrs: readonly string[],
+  ssl: boolean,
+): string => {
+  const guards = buildHbaLines(cidrs, ssl)
+    .map(
+      (line) =>
+        `grep -qF ${quoteArg(line)} "$HBA" || printf '%s\\n' ${quoteArg(line)} >> "$HBA"`,
+    )
+    .join("; ");
+  return `HBA=$(LC_ALL=C runuser -u postgres -- psql -tAc 'SHOW hba_file'); ${guards}`;
+};
 
 const provisionPostgres = Effect.fn(function* (input: ProvisionProps) {
   if (input.ipv4 === undefined) {
@@ -130,12 +182,11 @@ const provisionPostgres = Effect.fn(function* (input: ProvisionProps) {
     { stdin: sql },
   );
 
-  // 2. Append a password (scram) rule for the allowed CIDR, idempotently,
-  //    to the cluster's actual pg_hba.conf (discovered via SHOW hba_file).
-  const hbaLine = `host all all ${input.allowCidr} scram-sha-256`;
+  // 2. Append a password (scram) rule per allowed CIDR, idempotently, to the
+  //    cluster's actual pg_hba.conf (discovered once via SHOW hba_file).
   yield* execOrFail(
     input.host,
-    `HBA=$(LC_ALL=C runuser -u postgres -- psql -tAc 'SHOW hba_file'); grep -qF ${quoteArg(hbaLine)} "$HBA" || printf '%s\\n' ${quoteArg(hbaLine)} >> "$HBA"`,
+    buildHbaAppendCommand(input.allowCidrs, input.ssl),
   );
 
   // 3. Restart so listen_addresses takes effect, then wait for readiness.
@@ -151,7 +202,7 @@ const provisionPostgres = Effect.fn(function* (input: ProvisionProps) {
     database: "postgres",
     user: "postgres",
     password: input.adminPassword,
-    ssl: false,
+    ssl: input.ssl,
   } satisfies PostgresConnection;
 });
 
@@ -164,7 +215,8 @@ export const ProvisionProvider = () =>
         if (
           news.ipv4 !== olds.ipv4 ||
           news.version !== olds.version ||
-          news.allowCidr !== olds.allowCidr ||
+          JSON.stringify(news.allowCidrs) !== JSON.stringify(olds.allowCidrs) ||
+          news.ssl !== olds.ssl ||
           news.host.node !== olds.host.node ||
           news.host.vmid !== olds.host.vmid ||
           news.host.user !== olds.host.user ||
@@ -281,7 +333,8 @@ export const Postgres = Construct.fn(function* (
     ipv4: container.ipv4,
     version: server.version,
     adminPassword,
-    allowCidr: props.allowCidr ?? "0.0.0.0/0",
+    allowCidrs: props.allowCidrs ?? DEFAULT_ALLOW_CIDRS,
+    ssl: props.ssl ?? true,
   });
 
   const role = yield* PostgresRole("Role", {
