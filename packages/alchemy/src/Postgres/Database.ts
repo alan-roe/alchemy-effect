@@ -1,16 +1,20 @@
 import * as Effect from "effect/Effect";
+import { Unowned } from "../AdoptPolicy.ts";
 import { isResolved } from "../Diff.ts";
 import { createPhysicalName } from "../PhysicalName.ts";
 import * as Provider from "../Provider.ts";
 import { Resource } from "../Resource.ts";
 import {
   DEFAULT_PORT,
+  PostgresError,
   type PostgresConnection,
   withAdminClient,
 } from "./Connection.ts";
 import type { Providers } from "./Providers.ts";
+import { createInternalTags } from "../Tags.ts";
 import {
   alterDatabaseOwnerSql,
+  commentOnDatabaseSql,
   createDatabaseSql,
   dropDatabaseSql,
 } from "./sql.ts";
@@ -75,16 +79,32 @@ const resolveName = (id: string, name: string | undefined) =>
     ? Effect.succeed(name)
     : createPhysicalName({ id, lowercase: true });
 
-/** Read the owner role of a database, or `undefined` if the database is absent. */
-const readOwner = (conn: PostgresConnection, name: string) =>
+const ownershipComment = Effect.fnUntraced(function* (id: string) {
+  const tags = yield* createInternalTags(id);
+  return `alchemy:${JSON.stringify(tags)}`;
+});
+
+/** Read database owner and ownership comment, or `undefined` if absent. */
+const readDatabaseState = (conn: PostgresConnection, name: string) =>
   withAdminClient(conn, (client) =>
     client
-      .query<{ owner: string }>(
-        "SELECT pg_catalog.pg_get_userbyid(d.datdba) AS owner FROM pg_database d WHERE d.datname = $1",
+      .query<{ owner: string; comment: string | null }>(
+        "SELECT pg_catalog.pg_get_userbyid(d.datdba) AS owner, pg_catalog.shobj_description(d.oid, 'pg_database') AS comment FROM pg_database d WHERE d.datname = $1",
         [name],
       )
-      .then((r) => r.rows[0]?.owner),
+      .then((r) => r.rows[0]),
   );
+
+const buildAttributes = (
+  conn: PostgresConnection,
+  name: string,
+  owner: string,
+): PostgresDatabaseAttributes => ({
+  name,
+  owner,
+  host: conn.host,
+  port: conn.port ?? DEFAULT_PORT,
+});
 
 export const PostgresDatabaseProvider = () =>
   Provider.effect(
@@ -94,41 +114,60 @@ export const PostgresDatabaseProvider = () =>
         if (!isResolved(news)) return undefined;
         const newName = yield* resolveName(id, news.name);
         const oldName = output?.name ?? (yield* resolveName(id, olds?.name));
-        // The database name is the identity; renaming means a new database.
-        if (newName !== oldName) return { action: "replace" } as const;
+        const newPort = news.connection.port ?? DEFAULT_PORT;
+        const oldHost = output?.host ?? olds?.connection.host;
+        const oldPort = output?.port ?? olds?.connection.port ?? DEFAULT_PORT;
+        // The database name and server location are the identity; admin credentials are not.
+        if (
+          newName !== oldName ||
+          news.connection.host !== oldHost ||
+          newPort !== oldPort
+        ) {
+          return { action: "replace" } as const;
+        }
         return undefined;
       }),
 
-      read: Effect.fn(function* ({ olds, output }) {
-        if (!output) return undefined;
-        const owner = yield* readOwner(olds.connection, output.name);
-        if (owner === undefined) return undefined;
-        return {
-          name: output.name,
-          owner,
-          host: olds.connection.host,
-          port: olds.connection.port ?? DEFAULT_PORT,
-        };
+      read: Effect.fn(function* ({ id, olds, output }) {
+        const name = output?.name ?? (yield* resolveName(id, olds.name));
+        const state = yield* readDatabaseState(olds.connection, name);
+        if (state === undefined) return undefined;
+        const attrs = buildAttributes(olds.connection, name, state.owner);
+        if (output || state.comment === (yield* ownershipComment(id))) {
+          return attrs;
+        }
+        return Unowned(attrs);
       }),
 
-      reconcile: Effect.fn(function* ({ id, news }) {
+      reconcile: Effect.fn(function* ({ id, news, output }) {
         const name = yield* resolveName(id, news.name);
         const desiredOwner = news.owner ?? news.connection.user;
-        const observedOwner = yield* readOwner(news.connection, name);
+        const marker = yield* ownershipComment(id);
+        const observed = yield* readDatabaseState(news.connection, name);
+        if (
+          observed !== undefined &&
+          output === undefined &&
+          observed.comment !== marker
+        ) {
+          return yield* Effect.fail(
+            new PostgresError({
+              message: `Postgres database "${name}" already exists; adopt it or change name`,
+            }),
+          );
+        }
         yield* withAdminClient(news.connection, async (client) => {
-          if (observedOwner === undefined) {
+          if (observed === undefined) {
             // CREATE DATABASE cannot run in a transaction block; issue it alone.
             await client.query(createDatabaseSql(name, { owner: news.owner }));
-          } else if (observedOwner !== desiredOwner) {
-            await client.query(alterDatabaseOwnerSql(name, desiredOwner));
+            await client.query(commentOnDatabaseSql(name, marker));
+          } else {
+            if (observed.owner !== desiredOwner) {
+              await client.query(alterDatabaseOwnerSql(name, desiredOwner));
+            }
+            await client.query(commentOnDatabaseSql(name, marker));
           }
         });
-        return {
-          name,
-          owner: desiredOwner,
-          host: news.connection.host,
-          port: news.connection.port ?? DEFAULT_PORT,
-        };
+        return buildAttributes(news.connection, name, desiredOwner);
       }),
 
       delete: Effect.fn(function* ({ id, olds, output }) {

@@ -796,10 +796,28 @@ export const make = <A>(
                   })
                   .pipe(providePlanScope(fqn, oldState.instanceId));
                 if (attr) {
+                  const isUnowned = Unowned.is(attr);
+                  if (isUnowned) {
+                    const adoptThis = resource.Adopt ?? (yield* shouldAdopt);
+                    if (!adoptThis) {
+                      return yield* new OwnedBySomeoneElse({
+                        message:
+                          `Cannot adopt resource '${fqn}' (${resource.Type}): ` +
+                          "it exists in the cloud but is not owned by this " +
+                          "stack/stage/logical-id. Re-run with `--adopt` (or " +
+                          "wrap the effect in `adopt(true)`) to take it over.",
+                        resourceType: resource.Type,
+                        logicalId: id,
+                      });
+                    }
+                  }
                   return Node<Create>({
                     action: "create",
                     props: news,
-                    state: { ...oldState, attr },
+                    state: {
+                      ...oldState,
+                      attr: isUnowned ? stripUnowned(attr) : attr,
+                    },
                   });
                 }
               }
@@ -1206,7 +1224,7 @@ export const make = <A>(
               const provider = yield* findProviderByType(resourceType);
               if (oldState.attr === undefined) {
                 if (provider.read) {
-                  attr = yield* provider
+                  const readResult = yield* provider
                     .read({
                       id: logicalId,
                       instanceId: oldState.instanceId,
@@ -1214,6 +1232,9 @@ export const make = <A>(
                       output: oldState.attr as never,
                     })
                     .pipe(providePlanScope(fqn, oldState.instanceId));
+                  if (!Unowned.is(readResult)) {
+                    attr = readResult;
+                  }
                 }
               }
               return [

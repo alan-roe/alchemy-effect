@@ -69,6 +69,15 @@ export const Package = Resource<Package>("Linux.Package");
 // passed to dpkg verbatim (it is the dpkg field syntax, not JS interpolation).
 const DPKG_FORMAT = "${Status}|${Version}";
 
+const sameRemoteTarget = (
+  left: RemoteHost | undefined,
+  right: RemoteHost | undefined,
+): boolean =>
+  left !== undefined &&
+  right !== undefined &&
+  left.node === right.node &&
+  left.vmid === right.vmid;
+
 /**
  * Observe a package via `dpkg-query`. Returns the installed version, or
  * `undefined` when the package is not in the "installed" state. Shared by
@@ -93,8 +102,14 @@ export const PackageProvider = () =>
     Effect.succeed({
       diff: Effect.fn(function* ({ news, olds }) {
         if (!isResolved(news)) return undefined;
-        // The package name is the identity; renaming means a different package.
-        if (news.name !== olds?.name) return { action: "replace" } as const;
+        // The package name and container are identity; SSH auth/transport
+        // changes only change provider access and must reconcile in-place.
+        if (
+          news.name !== olds?.name ||
+          !sameRemoteTarget(news.host, olds?.host)
+        ) {
+          return { action: "replace" } as const;
+        }
         return undefined;
       }),
 

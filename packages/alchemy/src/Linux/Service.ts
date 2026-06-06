@@ -3,7 +3,13 @@ import { isResolved } from "../Diff.ts";
 import * as Provider from "../Provider.ts";
 import { Resource } from "../Resource.ts";
 import type { Providers } from "./Providers.ts";
-import { exec, execOrFail, quoteArg, type RemoteHost } from "./Remote.ts";
+import {
+  exec,
+  execOrFail,
+  quoteArg,
+  RemoteCommandError,
+  type RemoteHost,
+} from "./Remote.ts";
 
 /**
  * Properties for a systemd service on a Linux host.
@@ -77,6 +83,15 @@ export const Service = Resource<Service>("Linux.Service");
 // distinct from is-active's own non-zero codes for inactive/failed units.
 const NO_UNIT_EXIT = 7;
 
+const sameRemoteTarget = (
+  left: RemoteHost | undefined,
+  right: RemoteHost | undefined,
+): boolean =>
+  left !== undefined &&
+  right !== undefined &&
+  left.node === right.node &&
+  left.vmid === right.vmid;
+
 interface ServiceState {
   enabled: boolean;
   active: boolean;
@@ -106,8 +121,14 @@ export const ServiceProvider = () =>
     Effect.succeed({
       diff: Effect.fn(function* ({ news, olds }) {
         if (!isResolved(news)) return undefined;
-        // The unit name is the identity; renaming means a different service.
-        if (news.name !== olds?.name) return { action: "replace" } as const;
+        // The unit name and container are identity; SSH auth/transport changes
+        // only change provider access and must reconcile in-place.
+        if (
+          news.name !== olds?.name ||
+          !sameRemoteTarget(news.host, olds?.host)
+        ) {
+          return { action: "replace" } as const;
+        }
         return undefined;
       }),
 
@@ -158,10 +179,35 @@ export const ServiceProvider = () =>
           yield* execOrFail(news.host, `systemctl restart ${q}`);
         }
 
+        const final = yield* statService(news.host, news.name);
+        const target = `${news.host.node}/${news.host.vmid}`;
+        if (final === undefined) {
+          return yield* Effect.fail(
+            new RemoteCommandError({
+              message: `systemd unit ${news.name} not found on ${target} after reconcile; desired enabled=${enabled} active=${running}; observed missing`,
+            }),
+          );
+        }
+
+        if (final.enabled !== enabled) {
+          return yield* Effect.fail(
+            new RemoteCommandError({
+              message: `systemd unit ${news.name} on ${target} did not converge after reconcile; desired enabled=${enabled} active=${running}; observed enabled=${final.enabled} active=${final.active}`,
+            }),
+          );
+        }
+
+        if (final.active !== running) {
+          return yield* Effect.fail(
+            new RemoteCommandError({
+              message: `systemd unit ${news.name} on ${target} did not converge after reconcile; desired enabled=${enabled} active=${running}; observed enabled=${final.enabled} active=${final.active}`,
+            }),
+          );
+        }
         return {
           name: news.name,
-          enabled,
-          active: running,
+          enabled: final.enabled,
+          active: final.active,
           restartTrigger: news.restartTrigger,
         };
       }),

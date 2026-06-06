@@ -36,9 +36,10 @@ export default Alchemy.Stack(
         ? Redacted.make(process.env.PG_APP_PASSWORD)
         : undefined,
       ssh: {
-        // Node hostnames often don't resolve off-cluster; default the SSH
-        // target to the Proxmox API host (the primary node's IP).
-        host: process.env.PROXMOX_SSH_HOST ?? process.env.PROXMOX_HOST,
+        // Set PROXMOX_SSH_HOST only when the Proxmox node name is not
+        // resolvable from this machine; otherwise the construct uses
+        // container.node for `pct exec`.
+        host: process.env.PROXMOX_SSH_HOST,
         identity: process.env.PROXMOX_SSH_IDENTITY,
       },
     });

@@ -558,6 +558,52 @@ test(
 );
 
 test(
+  "Unowned read result for orphaned creating resource is not deleted",
+  Effect.gen(function* () {
+    yield* seed({
+      A: {
+        instanceId,
+        providerVersion: 0,
+        resourceType: "Test.TestResource",
+        status: "creating",
+        props: {
+          string: "A",
+        },
+        attr: undefined,
+        downstream: [],
+        bindings: [],
+        fqn: "A",
+        logicalId: "A",
+        namespace: undefined,
+      } as any,
+    });
+
+    const plan = yield* Effect.void.pipe(
+      makePlan,
+      Effect.provide(
+        Layer.succeed(TestResourceHooks, {
+          read: () =>
+            Effect.succeed(
+              Unowned({
+                string: "A",
+                stringArray: [],
+                stableString: "A",
+                stableArray: ["A"],
+                replaceString: undefined,
+                redacted: undefined,
+                redactedArray: undefined,
+              }),
+            ),
+        }),
+      ),
+    );
+
+    expect(plan.deletions.A!.state.attr).toBeUndefined();
+    expect(plan.deletions.A!.resource.Attributes).toBeUndefined();
+  }),
+);
+
+test(
   "allow deleting a resource after a surviving consumer removes the dependency",
   Effect.gen(function* () {
     yield* seed({
@@ -1472,6 +1518,109 @@ describe("prior crash in 'creating' state", () => {
       },
     },
   });
+
+  test(
+    "Unowned recovered attrs require explicit adopt after failed create",
+    Effect.gen(function* () {
+      yield* seed({
+        A: {
+          instanceId,
+          providerVersion: 0,
+          resourceType: "Test.TestResource",
+          status: "creating",
+          props: {
+            string: "A",
+          },
+          attr: undefined,
+          downstream: [],
+          bindings: [],
+          fqn: "A",
+          logicalId: "A",
+          namespace: undefined,
+        } as any,
+      });
+
+      const exit = yield* Effect.gen(function* () {
+        yield* TestResource("A", { string: "A" });
+      }).pipe(
+        makePlan,
+        Effect.provide(
+          Layer.succeed(TestResourceHooks, {
+            read: () =>
+              Effect.succeed(
+                Unowned({
+                  string: "A",
+                  stringArray: [],
+                  stableString: "A",
+                  stableArray: ["A"],
+                  replaceString: undefined,
+                  redacted: undefined,
+                  redactedArray: undefined,
+                }),
+              ),
+          }),
+        ),
+        Effect.exit,
+      );
+
+      expect(Exit.isFailure(exit)).toBe(true);
+      if (Exit.isFailure(exit)) {
+        const reason = exit.cause.reasons.find(Cause.isFailReason);
+        expect((reason?.error as any)?._tag).toBe("OwnedBySomeoneElse");
+        expect((reason?.error as any)?.resourceType).toBe("Test.TestResource");
+      }
+    }),
+  );
+
+  test(
+    "adopt strips Unowned brand from recovered attrs after failed create",
+    Effect.gen(function* () {
+      yield* seed({
+        A: {
+          instanceId,
+          providerVersion: 0,
+          resourceType: "Test.TestResource",
+          status: "creating",
+          props: {
+            string: "A",
+          },
+          attr: undefined,
+          downstream: [],
+          bindings: [],
+          fqn: "A",
+          logicalId: "A",
+          namespace: undefined,
+        } as any,
+      });
+
+      const plan = yield* Effect.gen(function* () {
+        yield* TestResource("A", { string: "A" }).pipe(adopt(true));
+      }).pipe(
+        makePlan,
+        Effect.provide(
+          Layer.succeed(TestResourceHooks, {
+            read: () =>
+              Effect.succeed(
+                Unowned({
+                  string: "A",
+                  stringArray: [],
+                  stableString: "A",
+                  stableArray: ["A"],
+                  replaceString: undefined,
+                  redacted: undefined,
+                  redactedArray: undefined,
+                }),
+              ),
+          }),
+        ),
+      );
+
+      expect(plan.resources.A!.action).toBe("create");
+      const recoveredAttr = (plan.resources.A as any).state.attr as object;
+      expect(Unowned.is(recoveredAttr)).toBe(false);
+      expect(Object.getOwnPropertySymbols(recoveredAttr).length).toBe(0);
+    }),
+  );
 });
 
 describe("prior crash in 'updating' state", () => {

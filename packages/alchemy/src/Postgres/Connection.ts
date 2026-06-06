@@ -66,9 +66,12 @@ export const buildConnectionUrl = (parts: {
   database: string;
   user: string;
   password: string;
+  ssl?: boolean;
 }): string => {
   const auth = `${encodeURIComponent(parts.user)}:${encodeURIComponent(parts.password)}`;
-  return `postgres://${auth}@${parts.host}:${parts.port}/${parts.database}`;
+  const path = encodeURIComponent(parts.database);
+  const search = parts.ssl ? "?sslmode=require" : "";
+  return `postgres://${auth}@${parts.host}:${parts.port}/${path}${search}`;
 };
 
 /**

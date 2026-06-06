@@ -180,6 +180,31 @@ provider(
       );
       expect(enabled.stdout.trim()).toBe("enabled");
 
+      const stoppedOut = yield* stack.deploy(
+        Effect.gen(function* () {
+          const svc = yield* Linux.Service("Svc", {
+            host,
+            name: "alchemy-test",
+            enabled: false,
+            running: false,
+          });
+          return { svc };
+        }),
+      );
+      expect(stoppedOut.svc.enabled).toBe(false);
+      expect(stoppedOut.svc.active).toBe(false);
+
+      const stoppedActive = yield* Linux.Remote.exec(
+        host,
+        "systemctl is-active alchemy-test",
+      );
+      expect(stoppedActive.stdout.trim()).not.toBe("active");
+      const stoppedEnabled = yield* Linux.Remote.exec(
+        host,
+        "systemctl is-enabled alchemy-test",
+      );
+      expect(stoppedEnabled.stdout.trim()).not.toBe("enabled");
+
       yield* stack.destroy();
 
       const afterActive = yield* Linux.Remote.exec(

@@ -80,6 +80,10 @@ export const alterRoleSql = (
 export const dropRoleSql = (name: string): string =>
   `DROP ROLE IF EXISTS ${quoteIdent(name)}`;
 
+/** Render `COMMENT ON ROLE <name> IS <comment>`. */
+export const commentOnRoleSql = (name: string, comment: string): string =>
+  `COMMENT ON ROLE ${quoteIdent(name)} IS ${quoteLiteral(comment)}`;
+
 /**
  * Render `CREATE DATABASE <name> [OWNER <owner>]`. `CREATE DATABASE` cannot run
  * inside a transaction block, so the provider issues it on its own.
@@ -96,6 +100,10 @@ export const createDatabaseSql = (
 /** Render `ALTER DATABASE <name> OWNER TO <owner>`. */
 export const alterDatabaseOwnerSql = (name: string, owner: string): string =>
   `ALTER DATABASE ${quoteIdent(name)} OWNER TO ${quoteIdent(owner)}`;
+
+/** Render `COMMENT ON DATABASE <name> IS <comment>`. */
+export const commentOnDatabaseSql = (name: string, comment: string): string =>
+  `COMMENT ON DATABASE ${quoteIdent(name)} IS ${quoteLiteral(comment)}`;
 
 /** Render `DROP DATABASE IF EXISTS <name>` (idempotent). */
 export const dropDatabaseSql = (name: string): string =>

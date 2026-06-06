@@ -5,6 +5,7 @@ import * as Provider from "../Provider.ts";
 import { ProxmoxAuth } from "./AuthProvider.ts";
 import { fromProfile } from "./Environment.ts";
 import { Container, ContainerProvider } from "./LXC/Container.ts";
+import { Provision, ProvisionProvider } from "./Postgres.ts";
 
 export class Providers extends Provider.ProviderCollection<Providers>()(
   "Proxmox",
@@ -40,7 +41,8 @@ export type ProviderRequirements = Layer.Services<ReturnType<typeof providers>>;
  * ```
  */
 export const providers = () =>
-  Layer.effect(Providers, Provider.collection([Container])).pipe(
+  Layer.effect(Providers, Provider.collection([Container, Provision])).pipe(
+    Layer.provide(ProvisionProvider()),
     Layer.provide(ContainerProvider()),
     Layer.provideMerge(fromProfile()),
     Layer.provideMerge(ProxmoxAuth),

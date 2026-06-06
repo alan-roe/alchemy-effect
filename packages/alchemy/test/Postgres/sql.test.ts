@@ -1,6 +1,8 @@
 import {
   alterDatabaseOwnerSql,
   alterRoleSql,
+  commentOnDatabaseSql,
+  commentOnRoleSql,
   createDatabaseSql,
   createRoleSql,
   dropDatabaseSql,
@@ -91,6 +93,14 @@ describe("dropRoleSql", () => {
   });
 });
 
+describe("commentOnRoleSql", () => {
+  test("quotes role names and comments", () => {
+    expect(commentOnRoleSql('ro"le', "alchemy:'owned'")).toBe(
+      "COMMENT ON ROLE \"ro\"\"le\" IS 'alchemy:''owned'''",
+    );
+  });
+});
+
 describe("createDatabaseSql", () => {
   test("renders without an owner", () => {
     expect(createDatabaseSql("appdb")).toBe('CREATE DATABASE "appdb"');
@@ -107,6 +117,14 @@ describe("alterDatabaseOwnerSql", () => {
   test("reassigns owner", () => {
     expect(alterDatabaseOwnerSql("appdb", "app")).toBe(
       'ALTER DATABASE "appdb" OWNER TO "app"',
+    );
+  });
+});
+
+describe("commentOnDatabaseSql", () => {
+  test("quotes database names and comments", () => {
+    expect(commentOnDatabaseSql('app"db', "alchemy:'owned'")).toBe(
+      "COMMENT ON DATABASE \"app\"\"db\" IS 'alchemy:''owned'''",
     );
   });
 });

@@ -80,6 +80,15 @@ export const File = Resource<File>("Linux.File");
 
 const STAT_FORMAT = "%a|%U|%G";
 
+const sameRemoteTarget = (
+  left: RemoteHost | undefined,
+  right: RemoteHost | undefined,
+): boolean =>
+  left !== undefined &&
+  right !== undefined &&
+  left.node === right.node &&
+  left.vmid === right.vmid;
+
 interface FileState {
   hash: string;
   mode: string;
@@ -112,8 +121,14 @@ export const FileProvider = () =>
     Effect.succeed({
       diff: Effect.fn(function* ({ news, olds }) {
         if (!isResolved(news)) return undefined;
-        // The path is the identity; moving the file means a new resource.
-        if (news.path !== olds?.path) return { action: "replace" } as const;
+        // The path and container are identity; SSH auth/transport changes only
+        // change provider access and must reconcile in-place.
+        if (
+          news.path !== olds?.path ||
+          !sameRemoteTarget(news.host, olds?.host)
+        ) {
+          return { action: "replace" } as const;
+        }
         return undefined;
       }),
 

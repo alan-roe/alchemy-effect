@@ -1,20 +1,28 @@
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as crypto from "node:crypto";
+import { Unowned } from "../AdoptPolicy.ts";
 import { isResolved } from "../Diff.ts";
 import { createPhysicalName } from "../PhysicalName.ts";
 import * as Provider from "../Provider.ts";
 import { Resource } from "../Resource.ts";
+import { createInternalTags } from "../Tags.ts";
 import {
   buildConnectionUrl,
   DEFAULT_DATABASE,
   DEFAULT_PORT,
+  PostgresError,
   type PostgresConnection,
   type PostgresOrigin,
   withAdminClient,
 } from "./Connection.ts";
 import type { Providers } from "./Providers.ts";
-import { alterRoleSql, createRoleSql, dropRoleSql } from "./sql.ts";
+import {
+  alterRoleSql,
+  commentOnRoleSql,
+  createRoleSql,
+  dropRoleSql,
+} from "./sql.ts";
 
 /**
  * Properties for a PostgreSQL login role on a self-hosted server.
@@ -105,6 +113,21 @@ const resolveName = (id: string, name: string | undefined) =>
     ? Effect.succeed(name)
     : createPhysicalName({ id, lowercase: true });
 
+const roleState = (conn: PostgresConnection, name: string) =>
+  withAdminClient(conn, (client) =>
+    client
+      .query<{ comment: string | null }>(
+        "SELECT shobj_description(r.oid, 'pg_authid') AS comment FROM pg_roles r WHERE r.rolname = $1",
+        [name],
+      )
+      .then((r) => r.rows[0]),
+  );
+
+const ownershipComment = Effect.fnUntraced(function* (id: string) {
+  const tags = yield* createInternalTags(id);
+  return `alchemy:${JSON.stringify(tags)}`;
+});
+
 const buildAttributes = (
   conn: PostgresConnection,
   name: string,
@@ -126,6 +149,7 @@ const buildAttributes = (
     database,
     user: name,
     password: Redacted.value(password),
+    ssl: conn.ssl,
   });
   return {
     name,
@@ -147,27 +171,65 @@ export const PostgresRoleProvider = () =>
         if (!isResolved(news)) return undefined;
         const newName = yield* resolveName(id, news.name);
         const oldName = output?.name ?? (yield* resolveName(id, olds?.name));
-        // The role name is the identity; renaming means a new role.
-        if (newName !== oldName) return { action: "replace" } as const;
+        const newPort = news.connection.port ?? DEFAULT_PORT;
+        const oldHost = output?.host ?? olds?.connection.host;
+        const oldPort = output?.port ?? olds?.connection.port ?? DEFAULT_PORT;
+        // The role name and server location are the identity; admin credentials are not.
+        if (
+          newName !== oldName ||
+          news.connection.host !== oldHost ||
+          newPort !== oldPort
+        ) {
+          return { action: "replace" } as const;
+        }
         return undefined;
       }),
 
-      read: Effect.fn(function* ({ olds, output }) {
-        // Without prior state we cannot recover the role's password, so there
-        // is nothing to refresh — let reconcile (re)create it.
-        if (!output) return undefined;
-        const exists = yield* withAdminClient(olds.connection, (client) =>
-          client
-            .query("SELECT 1 FROM pg_roles WHERE rolname = $1", [output.name])
-            .then((r) => (r.rowCount ?? 0) > 0),
+      read: Effect.fn(function* ({ id, olds, output }) {
+        const name = output?.name ?? (yield* resolveName(id, olds.name));
+        const state = yield* roleState(olds.connection, name);
+        if (!state) return undefined;
+        if (output) {
+          return buildAttributes(olds.connection, name, output.password);
+        }
+        const comment = yield* ownershipComment(id);
+        if (state.comment === comment) {
+          if (olds.password) {
+            return buildAttributes(olds.connection, name, olds.password);
+          }
+          return undefined;
+        }
+        if (olds.password) {
+          return Unowned(buildAttributes(olds.connection, name, olds.password));
+        }
+        return yield* Effect.fail(
+          new PostgresError({
+            message: `Postgres role "${name}" already exists but no password is available; supply password or change name`,
+          }),
         );
-        return exists
-          ? buildAttributes(olds.connection, output.name, output.password)
-          : undefined;
       }),
 
       reconcile: Effect.fn(function* ({ id, news, output }) {
         const name = yield* resolveName(id, news.name);
+        const comment = yield* ownershipComment(id);
+        const state = yield* roleState(news.connection, name);
+        if (state && output === undefined) {
+          if (state.comment === comment) {
+            if (news.password === undefined) {
+              return yield* Effect.fail(
+                new PostgresError({
+                  message: `Postgres role "${name}" was created by Alchemy but its generated password cannot be recovered; restore state or supply password`,
+                }),
+              );
+            }
+          } else {
+            return yield* Effect.fail(
+              new PostgresError({
+                message: `Postgres role "${name}" already exists; supply password and adopt it or change name`,
+              }),
+            );
+          }
+        }
         // Password precedence: explicit prop > persisted state > freshly generated.
         const password =
           news.password ??
@@ -183,15 +245,10 @@ export const PostgresRoleProvider = () =>
           password: Redacted.value(password),
         };
         yield* withAdminClient(news.connection, async (client) => {
-          const existing = await client.query(
-            "SELECT 1 FROM pg_roles WHERE rolname = $1",
-            [name],
-          );
           await client.query(
-            (existing.rowCount ?? 0) === 0
-              ? createRoleSql(name, opts)
-              : alterRoleSql(name, opts),
+            state ? alterRoleSql(name, opts) : createRoleSql(name, opts),
           );
+          await client.query(commentOnRoleSql(name, comment));
         });
         return buildAttributes(news.connection, name, password);
       }),
