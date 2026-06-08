@@ -1,6 +1,8 @@
 import * as Data from "effect/Data";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
+import * as Schedule from "effect/Schedule";
 import { Client } from "pg";
 
 /**
@@ -74,36 +76,92 @@ export const buildConnectionUrl = (parts: {
   return `postgres://${auth}@${parts.host}:${parts.port}/${path}${search}`;
 };
 
+const TRANSIENT_CONNECTION_CODES = new Set<string>([
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+]);
+
 /**
- * Open a one-shot admin connection, run `fn`, and always close it. Mirrors the
- * `withClient` idiom in `Neon/Migrations.ts` — a fresh client per lifecycle
- * operation, wrapped in `Effect.tryPromise` so the pg Promise API participates
- * in the Effect runtime.
+ * Whether `error` is a transient connection-level failure worth retrying — a
+ * refused/timed-out/reset TCP connect, not a query or auth error. Used to
+ * absorb the brief window between a freshly-(re)started Postgres reporting
+ * local readiness and actually accepting remote TCP.
+ */
+export const isTransientConnectionError = (error: unknown): boolean => {
+  if (typeof error !== "object" || error === null) return false;
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === "string" && TRANSIENT_CONNECTION_CODES.has(code)) {
+    return true;
+  }
+  const message =
+    error instanceof Error
+      ? error.message
+      : String((error as { message?: unknown }).message ?? "");
+  return /connection terminated unexpectedly/i.test(message);
+};
+
+/**
+ * Retry an admin-connection effect while it fails with a transient
+ * connection-level error (see {@link isTransientConnectionError}), using
+ * bounded exponential backoff. Query/auth errors are not retried — they
+ * surface immediately. This absorbs the brief race between a freshly-restarted
+ * Postgres reporting local readiness and accepting remote TCP.
+ */
+export const connectWithRetry = <A>(
+  connect: Effect.Effect<A, PostgresError>,
+): Effect.Effect<A, PostgresError> =>
+  connect.pipe(
+    Effect.retry({
+      while: (error) => isTransientConnectionError(error.cause),
+      schedule: Schedule.both(
+        Schedule.exponential(Duration.millis(500), 1.5),
+        Schedule.recurs(6),
+      ),
+    }),
+  );
+
+/**
+ * Open a one-shot admin connection, run `fn`, and always close it. The connect
+ * is retried on transient connection errors (see {@link connectWithRetry}); the
+ * client is acquired/released so `fn` runs exactly once and the socket is always
+ * closed even on failure. Mirrors the `withClient` idiom in `Neon/Migrations.ts`.
  */
 export const withAdminClient = <A>(
   conn: PostgresConnection,
   fn: (client: Client) => Promise<A>,
 ): Effect.Effect<A, PostgresError> =>
-  Effect.tryPromise({
-    try: async () => {
-      const client = new Client({
-        host: conn.host,
-        port: conn.port ?? DEFAULT_PORT,
-        database: conn.database ?? DEFAULT_DATABASE,
-        user: conn.user,
-        password: Redacted.value(conn.password),
-        ssl: conn.ssl ? { rejectUnauthorized: false } : undefined,
-      });
-      await client.connect();
-      try {
-        return await fn(client);
-      } finally {
-        await client.end().catch(() => {});
-      }
-    },
-    catch: (cause) =>
-      new PostgresError({
-        message: cause instanceof Error ? cause.message : String(cause),
-        cause,
+  Effect.acquireUseRelease(
+    connectWithRetry(
+      Effect.tryPromise({
+        try: async () => {
+          const client = new Client({
+            host: conn.host,
+            port: conn.port ?? DEFAULT_PORT,
+            database: conn.database ?? DEFAULT_DATABASE,
+            user: conn.user,
+            password: Redacted.value(conn.password),
+            ssl: conn.ssl ? { rejectUnauthorized: false } : undefined,
+          });
+          await client.connect();
+          return client;
+        },
+        catch: (cause) =>
+          new PostgresError({
+            message: cause instanceof Error ? cause.message : String(cause),
+            cause,
+          }),
       }),
-  });
+    ),
+    (client) =>
+      Effect.tryPromise({
+        try: () => fn(client),
+        catch: (cause) =>
+          new PostgresError({
+            message: cause instanceof Error ? cause.message : String(cause),
+            cause,
+          }),
+      }),
+    (client) => Effect.promise(() => client.end().catch(() => {})),
+  );
