@@ -1,5 +1,4 @@
 import * as Data from "effect/Data";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schedule from "effect/Schedule";
@@ -115,18 +114,17 @@ export const connectWithRetry = <A>(
   connect.pipe(
     Effect.retry({
       while: (error) => isTransientConnectionError(error.cause),
-      schedule: Schedule.both(
-        Schedule.exponential(Duration.millis(500), 1.5),
-        Schedule.recurs(6),
+      schedule: Schedule.exponential("500 millis", 1.5).pipe(
+        Schedule.both(Schedule.recurs(6)),
       ),
     }),
   );
 
 /**
- * Open a one-shot admin connection, run `fn`, and always close it. The connect
- * is retried on transient connection errors (see {@link connectWithRetry}); the
- * client is acquired/released so `fn` runs exactly once and the socket is always
- * closed even on failure. Mirrors the `withClient` idiom in `Neon/Migrations.ts`.
+ * Open a one-shot admin connection (a fresh client per lifecycle operation, as
+ * in Neon's `withClient`), run `fn`, and always close it. The connect is retried
+ * on transient connection errors via {@link connectWithRetry}; `acquireUseRelease`
+ * guarantees `fn` runs exactly once and the socket closes even on failure.
  */
 export const withAdminClient = <A>(
   conn: PostgresConnection,
